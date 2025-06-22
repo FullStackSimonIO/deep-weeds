@@ -1,103 +1,259 @@
+"use client";
+import React, { useState, useRef, useEffect } from "react";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import DecryptedText from "@/components/DecryptedText";
+
+// tooltip components from shadcn/ui
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+
+// Dynamically import react-webcam to avoid SSR issues
+// Using react-webcam directly per docs
+
+import Webcam from "react-webcam";
+import { boxToCoords, Coords, scaleCoords } from "./utils/coordinates";
 import Image from "next/image";
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+interface AnalyzeResponse {
+  filename: string;
+  detections: Array<{
+    label: string;
+    confidence: number;
+    box: [number, number, number, number];
+  }>;
+  image_url: string;
+}
+interface ClassifyWrapper {
+  success: boolean;
+  result?: AnalyzeResponse;
+  error?: string;
+}
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
+export default function Dashboard() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [selectedTab, setSelectedTab] = useState<"upload" | "camera">("upload");
+  const [file, setFile] = useState<File | null>(null);
+  const [captured, setCaptured] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [resultImage, setResultImage] = useState<string | null>(null);
+  const [coordsRaw, setCoordsRaw] = useState<Coords | null>(null);
+  const [scaledCoords, setScaledCoords] = useState<Coords | null>(null);
+  const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  const webcamRef = useRef<Webcam>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  const displayWidth = 640;
+  const displayHeight = 480;
+
+  useEffect(() => {
+    if (coordsRaw && imgRef.current) {
+      const naturalW = imgRef.current.naturalWidth;
+      const naturalH = imgRef.current.naturalHeight;
+      const scaled = scaleCoords(
+        coordsRaw,
+        naturalW,
+        naturalH,
+        displayWidth,
+        displayHeight
+      );
+      setScaledCoords(scaled);
+    }
+  }, [coordsRaw]);
+
+  const reset = () => {
+    setAnalysis(null);
+    setResultImage(null);
+    setCoordsRaw(null);
+    setScaledCoords(null);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    reset();
+    if (e.target.files?.[0]) setFile(e.target.files[0]);
+  };
+  const handleCapture = () => {
+    reset();
+    const imageSrc = webcamRef.current?.getScreenshot();
+    if (imageSrc) setCaptured(imageSrc);
+  };
+  const handleSubmit = async () => {
+    setLoading(true);
+    reset();
+    const formData = new FormData();
+    if (selectedTab === "upload" && file) {
+      formData.append("image", file, file.name);
+    } else if (selectedTab === "camera" && captured) {
+      const blob = await (await fetch(captured)).blob();
+      formData.append("image", blob, "snapshot.jpg");
+    } else {
+      setLoading(false);
+      return;
+    }
+    try {
+      const res = await fetch("/api/classify", {
+        method: "POST",
+        body: formData,
+      });
+      const wrapper = (await res.json()) as ClassifyWrapper;
+      if (!wrapper.success || !wrapper.result) {
+        console.error("Classify error", wrapper.error);
+        setLoading(false);
+        return;
+      }
+      const json = wrapper.result;
+      setAnalysis(json);
+      if (json.detections?.length > 0) {
+        const raw = boxToCoords(json.detections[0].box);
+        setCoordsRaw(raw);
+        const url = json.image_url.startsWith("http")
+          ? json.image_url
+          : `${window.origin}${json.image_url}`;
+        setResultImage(url);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col bg-background text-foreground">
+      <header className="grid grid-cols-3 p-4 text-center">
+        <div />
+        <DecryptedText
+          text="Deep-Weeds Dashboard"
+          animateOn="view"
+          speed={300}
+          className="text-7xl font-bold text-center"
+        />
+      </header>
+      <main className="p-6 flex-1">
+        <Card className="max-w-2xl mx-auto">
+          <CardHeader>
+            <CardTitle>Weed-Detection</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tabs
+              value={selectedTab}
+              onValueChange={(v) => {
+                reset();
+                setSelectedTab(v as "upload" | "camera");
+              }}
+            >
+              <TabsList>
+                <TabsTrigger value="upload">Upload Image</TabsTrigger>
+                <TabsTrigger value="camera">Camera</TabsTrigger>
+              </TabsList>
+              <TabsContent value="upload">
+                <Label htmlFor="file-upload" className="pb-2">
+                  Select File:
+                </Label>
+                <Input
+                  id="file-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                />
+              </TabsContent>
+              <TabsContent value="camera">
+                <div className="flex flex-col items-center">
+                  <Webcam
+                    audio={false}
+                    mirrored={true}
+                    ref={webcamRef}
+                    screenshotFormat="image/jpeg"
+                    width={displayWidth}
+                    height={displayHeight}
+                    className="rounded-lg border"
+                  />
+                  <Button onClick={handleCapture}>Take Photo</Button>
+                </div>
+              </TabsContent>
+            </Tabs>
+            <div className="text-right mt-4">
+              <Button
+                onClick={handleSubmit}
+                disabled={
+                  loading ||
+                  (selectedTab === "upload" && !file) ||
+                  (selectedTab === "camera" && !captured)
+                }
+              >
+                {loading ? "Analysiere…" : "Analyse starten"}
+              </Button>
+            </div>
+            {/* Preview + Overlay */}
+            {(file || resultImage) && (
+              <div
+                ref={containerRef}
+                className="relative mx-auto mt-4 rounded-lg overflow-hidden"
+                style={{ width: displayWidth, height: displayHeight }}
+              >
+                <Image
+                  ref={imgRef}
+                  src={file ? URL.createObjectURL(file) : resultImage!}
+                  width={displayWidth}
+                  height={displayHeight}
+                  alt="Preview"
+                  className="w-full h-full object-cover"
+                />
+                {scaledCoords && analysis?.detections?.[0] && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: scaledCoords.y,
+                          left: scaledCoords.x,
+                          width: scaledCoords.width,
+                          height: scaledCoords.height,
+                          border: "2px solid rgba(255,0,0,0.8)",
+                          boxSizing: "border-box",
+                          cursor: "pointer",
+                        }}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Confidence:{" "}
+                      {(analysis.detections[0].confidence * 100).toFixed(1)}%
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            )}
+            {analysis?.detections?.length && (
+              <Card className="mt-4">
+                <CardHeader>
+                  <CardTitle>Result:</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {analysis.detections.length > 0 && (
+                    <p className="mb-2 text-green-500 font-medium">
+                      {analysis.detections.length === 1
+                        ? "1 weed detected"
+                        : `${analysis.detections.length} weeds detected`}
+                    </p>
+                  )}
+                  {/*
+                  <pre className="whitespace-pre-wrap text-sm">
+                    {JSON.stringify(analysis.detections, null, 2)}
+                  </pre>{" "}
+                  */}
+                </CardContent>
+              </Card>
+            )}
+          </CardContent>
+        </Card>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
     </div>
   );
 }
