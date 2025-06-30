@@ -129,12 +129,7 @@ export default function Dashboard() {
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <header className="grid grid-cols-3 p-4 text-center">
         <div />
-        <DecryptedText
-          text="Deep-Weeds Dashboard"
-          animateOn="view"
-          speed={300}
-          className="text-7xl font-bold text-center"
-        />
+        <h1 className="text-7xl">Deep Weeds Dashboard</h1>
       </header>
       <main className="p-6 flex-1">
         <Card className="max-w-2xl mx-auto">
