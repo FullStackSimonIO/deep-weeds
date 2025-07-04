@@ -39,7 +39,7 @@ export function AppSidebar() {
             </SidebarMenuItem>
             <SidebarMenuItem className="flex">
               <Video className="mr-2  w-4" />
-              <Link href="dashboards/webcam">Webcam</Link>
+              <Link href="/webcam">Webcam</Link>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
