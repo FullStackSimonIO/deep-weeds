@@ -1,8 +1,9 @@
-import { Button } from "@relume_io/relume-ui";
+"use client";
 import type { ButtonProps } from "@relume_io/relume-ui";
 import Image from "next/image";
 import { RxChevronRight } from "react-icons/rx";
 import { Badge } from "./ui/badge";
+import ScrollFloat from "./ScrollFloat";
 
 type ImageProps = {
   src: string;
@@ -27,7 +28,7 @@ export type Layout237Props = React.ComponentPropsWithoutRef<"section"> &
   Partial<Props>;
 
 export const Layout237 = (props: Layout237Props) => {
-  const { tagline, heading, description, sections, buttons } = {
+  const { tagline, sections } = {
     ...props,
     ...Layout237Defaults,
   };
@@ -40,10 +41,16 @@ export const Layout237 = (props: Layout237Props) => {
               <Badge className="mb-3 font-semibold md:mb-4 rounded-full overflow-hidden bg-gradient-to-r from-accent to-[#02518a] text-white">
                 {tagline}
               </Badge>
-              <h2 className="rb-5 mb-5 text-5xl font-bold md:mb-6 md:text-7xl lg:text-8xl">
-                {heading}
-              </h2>
-              <p className="md:text-md">{description}</p>
+              <ScrollFloat
+                animationDuration={1}
+                ease="back.inOut(2)"
+                scrollStart="center bottom+=50%"
+                scrollEnd="bottom bottom-=40%"
+                stagger={0.03}
+                textClassName="rb-5 mb-5 text-5xl font-bold md:mb-6 md:text-7xl lg:text-7xl"
+              >
+                How it works
+              </ScrollFloat>
             </div>
           </div>
           <div className="grid grid-cols-1 items-start justify-center gap-y-12 md:grid-cols-3 md:gap-x-8 md:gap-y-16 lg:gap-x-12">
@@ -66,13 +73,6 @@ export const Layout237 = (props: Layout237Props) => {
                 </h3>
                 <p>{section.description}</p>
               </div>
-            ))}
-          </div>
-          <div className="mt-10 flex items-center gap-4 md:mt-14 lg:mt-16">
-            {buttons.map((button, index) => (
-              <Button key={index} {...button}>
-                {button.title}
-              </Button>
             ))}
           </div>
         </div>

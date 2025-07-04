@@ -1,12 +1,23 @@
-import { clerkMiddleware } from "@clerk/nextjs/server";
+// middleware.ts
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-export default clerkMiddleware();
+const isProtectedRoute = createRouteMatcher([
+  "/dashboard(.*)", // Dashboard routes
+]);
 
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) await auth.protect();
+});
+
+// only run on “app routes” and API, not _next, images, favicon…
 export const config = {
   matcher: [
-    // Skip Next.js internals and all static files, unless found in search params
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    // Always run for API routes
-    "/(api|trpc)(.*)",
+    /*
+      match all paths except:
+      - _next/static    (Next.js assets)
+      - _next/image     (Next.js Image optimization)
+      - favicon.ico     (your favicon)
+    */
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };

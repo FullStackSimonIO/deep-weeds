@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ClickSpark from "@/components/ClickSpark";
-import SidebarWrapper from "@/components/SidebarWrapper";
-import Navbar from "@/components/Navbar";
+
+import { ClerkProvider } from "@clerk/nextjs";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,14 +26,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="de">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background`}
-      >
-        <Navbar />
-        <SidebarWrapper />
-        <ClickSpark>{children}</ClickSpark>
-      </body>
-    </html>
+    <ClerkProvider
+      signInForceRedirectUrl="/dashboard/image-upload"
+      signUpForceRedirectUrl="/dashboard/image-upload"
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+    >
+      <html lang="de">
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background`}
+        >
+          <ClickSpark>{children}</ClickSpark>
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }

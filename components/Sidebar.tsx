@@ -35,11 +35,11 @@ export function AppSidebar() {
             </SidebarMenuItem>
             <SidebarMenuItem className="flex">
               <UploadCloud className="mr-2 w-4 " />
-              <Link href="/upload">Image Upload</Link>
+              <Link href="/dashboard/image-upload">Image Upload</Link>
             </SidebarMenuItem>
             <SidebarMenuItem className="flex">
               <Video className="mr-2  w-4" />
-              <Link href="/upload">Webcam</Link>
+              <Link href="dashboards/webcam">Webcam</Link>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
