@@ -1,9 +1,14 @@
+// next.config.js
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   images: {
+    // you can still use domains if you're only loading whole-host images
+    domains: ["localhost", "plant.id.let-net.cc"],
+
+    // remotePatterns gives you fine-grained path+protocol control
     remotePatterns: [
+      // your GitHub raw URLs
       {
         protocol: "https",
         hostname: "raw.githubusercontent.com",
@@ -16,7 +21,31 @@ const nextConfig: NextConfig = {
         port: "",
         pathname: "/fullstacksimon/deep-weeds/main/public/analysis/**",
       },
-      new URL("https://my-store-id.public.blob.vercel-storage.com/**"),
+
+      // your Vercel blob storage
+      {
+        protocol: "https",
+        hostname: "my-store-id.public.blob.vercel-storage.com",
+        port: "",
+        pathname: "/**",
+      },
+
+      // allow raw object-URLs & static files from localhost during dev
+      {
+        protocol: "http",
+        hostname: "localhost",
+        port: "3000",
+        // you can tighten this to your actual upload folder if you want:
+        pathname: "/images/**",
+      },
+
+      // allow any path on your future prod domain
+      {
+        protocol: "https",
+        hostname: "plant.id.let-net.cc",
+        port: "",
+        pathname: "/**",
+      },
     ],
   },
 };

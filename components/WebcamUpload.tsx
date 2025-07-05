@@ -1,7 +1,12 @@
 // components/WebcamUpload.tsx
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  type ReactEventHandler,
+} from "react";
 import Webcam from "react-webcam";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,45 +35,59 @@ interface ClassifyWrapper {
 
 export default function WebcamUpload() {
   const webcamRef = useRef<Webcam>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   const [capturedImage, setCapturedImage] = useState<Blob | null>(null);
   const [loading, setLoading] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
-  const [coordsRaw, setCoordsRaw] = useState<Coords | null>(null);
-  const [scaledCoords, setScaledCoords] = useState<Coords | null>(null);
-  const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  const [rawCoords, setRawCoords] = useState<Coords | null>(null);
+  const [scaled, setScaled] = useState<Coords | null>(null);
+  const [confidence, setConfidence] = useState<number | null>(null);
 
   const DISPLAY_W = 640;
   const DISPLAY_H = 480;
 
-  useEffect(() => {
-    if (coordsRaw && imgRef.current) {
-      const w = imgRef.current.naturalWidth;
-      const h = imgRef.current.naturalHeight;
-      setScaledCoords(scaleCoords(coordsRaw, w, h, DISPLAY_W, DISPLAY_H));
-    }
-  }, [coordsRaw]);
+  // scale once the <Image> has loaded
+  const onImageLoad: ReactEventHandler<HTMLImageElement> = useCallback(
+    (e) => {
+      if (!rawCoords) return;
+      const img = e.currentTarget;
+      const naturalW = img.naturalWidth;
+      const naturalH = img.naturalHeight;
+      const displayW = img.width;
+      const displayH = img.height;
+      const s = scaleCoords(rawCoords, naturalW, naturalH, displayW, displayH);
+      if (
+        Number.isFinite(s.x) &&
+        Number.isFinite(s.y) &&
+        Number.isFinite(s.width) &&
+        Number.isFinite(s.height)
+      ) {
+        setScaled(s);
+      }
+    },
+    [rawCoords]
+  );
 
+  // clear out old state
   const reset = () => {
-    setAnalysis(null);
     setResultImage(null);
-    setCoordsRaw(null);
-    setScaledCoords(null);
+    setRawCoords(null);
+    setScaled(null);
+    setConfidence(null);
   };
 
+  // take a photo
   const capture = () => {
     reset();
-    if (!webcamRef.current) return;
-    const dataUrl = webcamRef.current.getScreenshot();
-    if (!dataUrl) return;
-    // convert to blob
-    fetch(dataUrl)
-      .then((res) => res.blob())
+    const shot = webcamRef.current?.getScreenshot();
+    if (!shot) return;
+    fetch(shot)
+      .then((r) => r.blob())
       .then((blob) => setCapturedImage(blob));
   };
 
+  // send to API
   const handleSubmit = async () => {
     if (!capturedImage) return;
     setLoading(true);
@@ -78,17 +97,20 @@ export default function WebcamUpload() {
 
     try {
       const res = await fetch("/api/classify", { method: "POST", body: form });
-      const json: ClassifyWrapper = await res.json();
+      const json = (await res.json()) as ClassifyWrapper;
+
       if (json.success && json.result) {
-        const r = json.result;
-        setAnalysis(r);
-        if (r.detections.length) {
-          setCoordsRaw(boxToCoords(r.detections[0].box));
-          setResultImage(
-            r.image_url.startsWith("http")
-              ? r.image_url
-              : `${window.location.origin}${r.image_url}`
-          );
+        // display returned image
+        const url = json.result.image_url.startsWith("http")
+          ? json.result.image_url
+          : window.location.origin + json.result.image_url;
+        setResultImage(url);
+
+        // extract first detection
+        if (json.result.detections.length) {
+          const det = json.result.detections[0];
+          setRawCoords(boxToCoords(det.box));
+          setConfidence(det.confidence);
         }
       } else {
         console.error("Analysis error:", json.error);
@@ -109,9 +131,8 @@ export default function WebcamUpload() {
       </CardHeader>
 
       <CardContent className="px-6 py-8 space-y-6">
-        {/* — Webcam Preview or Captured Image — */}
+        {/* — Webcam or captured preview — */}
         <div
-          ref={containerRef}
           className="relative w-full aspect-[4/3] mx-auto rounded-lg border border-gray-700 overflow-hidden"
           style={{ maxWidth: DISPLAY_W }}
         >
@@ -130,40 +151,42 @@ export default function WebcamUpload() {
           {(capturedImage || resultImage) && (
             <Image
               ref={imgRef}
-              src={
-                resultImage
-                  ? resultImage
-                  : URL.createObjectURL(capturedImage as Blob)
-              }
+              src={resultImage ?? URL.createObjectURL(capturedImage!)}
               alt="Preview"
               fill
               className="object-cover"
+              onLoadingComplete={(img) =>
+                onImageLoad({
+                  currentTarget: img,
+                } as React.SyntheticEvent<HTMLImageElement>)
+              }
             />
           )}
 
-          {scaledCoords && analysis?.detections[0] && (
+          {/* detection box + tooltip */}
+          {scaled != null && confidence != null && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <div
                   style={{
                     position: "absolute",
-                    top: scaledCoords.y,
-                    left: scaledCoords.x,
-                    width: scaledCoords.width,
-                    height: scaledCoords.height,
+                    top: scaled.y,
+                    left: scaled.x,
+                    width: scaled.width,
+                    height: scaled.height,
                     border: "3px solid #EF4444",
+                    boxSizing: "border-box",
                   }}
                 />
               </TooltipTrigger>
               <TooltipContent side="top" align="center">
-                Confidence:{" "}
-                {(analysis.detections[0].confidence * 100).toFixed(1)}%
+                Confidence: {(confidence * 100).toFixed(1)}%
               </TooltipContent>
             </Tooltip>
           )}
         </div>
 
-        {/* — Action Buttons — */}
+        {/* — Controls — */}
         <div className="flex justify-center space-x-4">
           {!capturedImage ? (
             <Button onClick={capture} className="bg-[#02518a] text-white">
@@ -172,11 +195,11 @@ export default function WebcamUpload() {
           ) : (
             <>
               <Button
+                variant="secondary"
                 onClick={() => {
                   setCapturedImage(null);
                   reset();
                 }}
-                variant="secondary"
               >
                 Retake
               </Button>

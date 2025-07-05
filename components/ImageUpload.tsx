@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useCallback, type ReactEventHandler } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,41 +29,30 @@ interface ClassifyWrapper {
 }
 
 export default function ImageUpload() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
-
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
-  const [coordsRaw, setCoordsRaw] = useState<Coords | null>(null);
-  const [scaledCoords, setScaledCoords] = useState<Coords | null>(null);
-  const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  const [rawCoords, setRawCoords] = useState<Coords | null>(null);
+  const [scaled, setScaled] = useState<Coords | null>(null);
 
-  const DISPLAY_W = 640;
-  const DISPLAY_H = 480;
+  // **NEW** store the confidence of the first detection
+  const [confidence, setConfidence] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (coordsRaw && imgRef.current) {
-      const w = imgRef.current.naturalWidth;
-      const h = imgRef.current.naturalHeight;
-      setScaledCoords(scaleCoords(coordsRaw, w, h, DISPLAY_W, DISPLAY_H));
-    }
-  }, [coordsRaw]);
-
-  function reset() {
-    setAnalysis(null);
+  // once we have a new file or resultImage, clear everything
+  const reset = () => {
+    setScaled(null);
+    setRawCoords(null);
     setResultImage(null);
-    setCoordsRaw(null);
-    setScaledCoords(null);
-  }
+    setConfidence(null); // reset confidence too
+  };
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     reset();
     const f = e.target.files?.[0];
     if (f) setFile(f);
-  }
+  };
 
-  async function handleSubmit() {
+  const handleSubmit = async () => {
     if (!file) return;
     setLoading(true);
     reset();
@@ -72,17 +61,18 @@ export default function ImageUpload() {
 
     try {
       const res = await fetch("/api/classify", { method: "POST", body: form });
-      const json: ClassifyWrapper = await res.json();
+      const json = (await res.json()) as ClassifyWrapper;
       if (json.success && json.result) {
-        const r = json.result;
-        setAnalysis(r);
-        if (r.detections.length) {
-          setCoordsRaw(boxToCoords(r.detections[0].box));
-          setResultImage(
-            r.image_url.startsWith("http")
-              ? r.image_url
-              : `${window.location.origin}${r.image_url}`
-          );
+        setResultImage(
+          json.result.image_url.startsWith("http")
+            ? json.result.image_url
+            : window.location.origin + json.result.image_url
+        );
+
+        if (json.result.detections.length) {
+          const det = json.result.detections[0];
+          setRawCoords(boxToCoords(det.box));
+          setConfidence(det.confidence); // <- capture confidence
         }
       } else {
         console.error("Analysis error:", json.error);
@@ -92,7 +82,32 @@ export default function ImageUpload() {
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  // When <Image> finishes loading, we know its actual size in the DOM.
+  // We only compute once, and only if rawCoords exist.
+  const onImageLoad: ReactEventHandler<HTMLImageElement> = useCallback(
+    (e) => {
+      if (!rawCoords) return;
+      const img = e.currentTarget;
+      const naturalW = img.naturalWidth;
+      const naturalH = img.naturalHeight;
+      const displayW = img.width;
+      const displayH = img.height;
+
+      const s = scaleCoords(rawCoords, naturalW, naturalH, displayW, displayH);
+      // only set if finite
+      if (
+        Number.isFinite(s.x) &&
+        Number.isFinite(s.y) &&
+        Number.isFinite(s.width) &&
+        Number.isFinite(s.height)
+      ) {
+        setScaled(s);
+      }
+    },
+    [rawCoords]
+  );
 
   return (
     <Card className="w-full max-w-lg mx-auto bg-gray-900 border border-gray-700 rounded-2xl shadow-lg overflow-hidden">
@@ -117,7 +132,7 @@ export default function ImageUpload() {
             "
           >
             <Folder size={0.5} color="#02518a" />
-            <span className="mt-2 text-sm sm:text-base text-gray-300 ">
+            <span className="mt-2 text-sm sm:text-base text-gray-300">
               {file ? file.name : "Click to select or drag an image"}
             </span>
           </label>
@@ -143,36 +158,37 @@ export default function ImageUpload() {
 
         {/* — Preview & Overlay — */}
         {(file || resultImage) && (
-          <div
-            ref={containerRef}
-            className="relative w-full aspect-[4/3] mx-auto rounded-lg border border-gray-700 overflow-hidden"
-            style={{ maxWidth: DISPLAY_W }}
-          >
+          <div className="relative w-full aspect-[4/3] mx-auto rounded-lg border border-gray-700 overflow-hidden">
             <Image
-              ref={imgRef}
               src={file ? URL.createObjectURL(file) : (resultImage as string)}
               alt="Preview"
               fill
               className="object-cover"
+              onLoadingComplete={(img) =>
+                onImageLoad({
+                  currentTarget: img,
+                } as React.SyntheticEvent<HTMLImageElement>)
+              }
             />
 
-            {scaledCoords && analysis?.detections[0] && (
+            {/* only render if we have finite scaled coords */}
+            {scaled && confidence !== null && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <div
                     style={{
                       position: "absolute",
-                      top: scaledCoords.y,
-                      left: scaledCoords.x,
-                      width: scaledCoords.width,
-                      height: scaledCoords.height,
+                      top: scaled.y,
+                      left: scaled.x,
+                      width: scaled.width,
+                      height: scaled.height,
                       border: "3px solid #EF4444",
+                      boxSizing: "border-box",
                     }}
                   />
                 </TooltipTrigger>
                 <TooltipContent side="top" align="center">
-                  Confidence:{" "}
-                  {(analysis.detections[0].confidence * 100).toFixed(1)}%
+                  Confidence: {(confidence * 100).toFixed(1)}%
                 </TooltipContent>
               </Tooltip>
             )}
