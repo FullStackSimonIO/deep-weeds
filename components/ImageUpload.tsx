@@ -18,11 +18,13 @@ interface Detection {
   confidence: number;
   box: [number, number, number, number];
 }
+
 interface AnalyzeResponse {
   filename: string;
   detections: Detection[];
   image_url: string;
 }
+
 interface ClassifyWrapper {
   success: boolean;
   result?: AnalyzeResponse;
@@ -34,14 +36,20 @@ export default function ImageUpload() {
   const [loading, setLoading] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+
+  // alle skalierten Boxen + Confidence
   const [scaledBoxes, setScaledBoxes] = useState<
     Array<Coords & { confidence: number }>
   >([]);
+  // Flag, damit wir nur EINMAL skalieren und die Endlosschleife vermeiden
+  const [hasScaled, setHasScaled] = useState(false);
 
   const reset = () => {
+    setFile(null);
     setResultImage(null);
     setAnalysis(null);
     setScaledBoxes([]);
+    setHasScaled(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,8 +61,7 @@ export default function ImageUpload() {
   const handleSubmit = async () => {
     if (!file) return;
     setLoading(true);
-    reset();
-
+    // bereits reset() aufgerufen
     const form = new FormData();
     form.append("image", file, file.name);
 
@@ -69,7 +76,7 @@ export default function ImageUpload() {
             : window.location.origin + r.image_url
         );
         setAnalysis(r);
-        // scaledBoxes setzen wir nach Image-Load
+        // Scaling erfolgt später in onLoad
       } else {
         console.error("Analysis error:", json.error);
       }
@@ -80,27 +87,24 @@ export default function ImageUpload() {
     }
   };
 
-  // Wenn das Bild im DOM fertig gerendert ist, skalieren wir alle Boxes
+  // Sobald das Bild im DOM geladen ist, skaliere alle Boxes einmalig
   const onImageLoad: ReactEventHandler<HTMLImageElement> = useCallback(
     (e) => {
-      if (!analysis) return;
+      if (!analysis || hasScaled) return;
+
       const img = e.currentTarget;
       const naturalW = img.naturalWidth;
       const naturalH = img.naturalHeight;
       const displayW = img.width;
       const displayH = img.height;
 
-      const newScaled = analysis.detections.map((det) => {
+      const boxes = analysis.detections.map((det) => {
         const raw = boxToCoords(det.box);
         const s = scaleCoords(raw, naturalW, naturalH, displayW, displayH);
-        return {
-          ...s,
-          confidence: det.confidence,
-        };
+        return { ...s, confidence: det.confidence };
       });
 
-      // Filter ungültige Werte raus
-      const finiteBoxes = newScaled.filter(
+      const finite = boxes.filter(
         (b) =>
           Number.isFinite(b.x) &&
           Number.isFinite(b.y) &&
@@ -108,9 +112,10 @@ export default function ImageUpload() {
           Number.isFinite(b.height)
       );
 
-      setScaledBoxes(finiteBoxes);
+      setScaledBoxes(finite);
+      setHasScaled(true);
     },
-    [analysis]
+    [analysis, hasScaled]
   );
 
   return (
@@ -163,35 +168,15 @@ export default function ImageUpload() {
         {/* — Preview & Overlays — */}
         {(file || resultImage) && (
           <div className="relative w-full aspect-[4/3] mx-auto rounded-lg border border-gray-700 overflow-hidden">
-            {file ? (
-              // für lokale Datei-Previews: normales <img>
-              <Image
-                src={URL.createObjectURL(file)}
-                alt="Preview"
-                fill
-                unoptimized
-                className="object-cover"
-                onLoadingComplete={(img: HTMLImageElement) =>
-                  onImageLoad({
-                    currentTarget: img,
-                  } as React.SyntheticEvent<HTMLImageElement>)
-                }
-              />
-            ) : (
-              // für server‐seitige / persistente Resultate: Next/Image unoptimized
-              <Image
-                src={resultImage!}
-                alt="Preview"
-                fill
-                unoptimized
-                className="object-cover"
-                onLoadingComplete={(img: HTMLImageElement) =>
-                  onImageLoad({
-                    currentTarget: img,
-                  } as React.SyntheticEvent<HTMLImageElement>)
-                }
-              />
-            )}
+            <Image
+              src={file ? URL.createObjectURL(file) : resultImage!}
+              alt="Preview"
+              fill
+              unoptimized
+              className="object-cover"
+              onLoad={onImageLoad}
+            />
+
             {scaledBoxes.map((box, idx) => (
               <Tooltip key={idx}>
                 <TooltipTrigger asChild>
