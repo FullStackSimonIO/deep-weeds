@@ -2,6 +2,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  api: {
+    bodyParser: {
+      // by default it's around 1mb; bump it to whatever you need
+      sizeLimit: "20mb",
+    },
+  },
   images: {
     // you can still use domains if you're only loading whole-host images
     domains: ["localhost", "plant.id.let-net.cc"],
@@ -45,6 +51,18 @@ const nextConfig: NextConfig = {
         hostname: "plant.id.let-net.cc",
         port: "",
         pathname: "/**",
+      },
+      {
+        protocol: "http",
+        hostname: "localhost",
+        port: "3000",
+        pathname: "/images/**",
+      },
+      {
+        protocol: "https",
+        hostname: "plant.id.let-net.cc",
+        port: "",
+        pathname: "/images/**",
       },
     ],
   },

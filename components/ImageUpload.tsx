@@ -163,18 +163,35 @@ export default function ImageUpload() {
         {/* — Preview & Overlays — */}
         {(file || resultImage) && (
           <div className="relative w-full aspect-[4/3] mx-auto rounded-lg border border-gray-700 overflow-hidden">
-            <Image
-              src={file ? URL.createObjectURL(file) : (resultImage as string)}
-              alt="Preview"
-              fill
-              className="object-cover"
-              onLoadingComplete={(img) =>
-                onImageLoad({
-                  currentTarget: img,
-                } as React.SyntheticEvent<HTMLImageElement>)
-              }
-            />
-
+            {file ? (
+              // für lokale Datei-Previews: normales <img>
+              <Image
+                src={URL.createObjectURL(file)}
+                alt="Preview"
+                fill
+                unoptimized
+                className="object-cover"
+                onLoadingComplete={(img: HTMLImageElement) =>
+                  onImageLoad({
+                    currentTarget: img,
+                  } as React.SyntheticEvent<HTMLImageElement>)
+                }
+              />
+            ) : (
+              // für server‐seitige / persistente Resultate: Next/Image unoptimized
+              <Image
+                src={resultImage!}
+                alt="Preview"
+                fill
+                unoptimized
+                className="object-cover"
+                onLoadingComplete={(img: HTMLImageElement) =>
+                  onImageLoad({
+                    currentTarget: img,
+                  } as React.SyntheticEvent<HTMLImageElement>)
+                }
+              />
+            )}
             {scaledBoxes.map((box, idx) => (
               <Tooltip key={idx}>
                 <TooltipTrigger asChild>
