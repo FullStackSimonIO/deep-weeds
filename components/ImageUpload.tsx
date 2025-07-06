@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useCallback, type ReactEventHandler } from "react";
-import imageCompression from "browser-image-compression";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,9 +36,12 @@ export default function ImageUpload() {
   const [loading, setLoading] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+
+  // alle skalierten Boxen + Confidence
   const [scaledBoxes, setScaledBoxes] = useState<
     Array<Coords & { confidence: number }>
   >([]);
+  // Flag, damit wir nur EINMAL skalieren und die Endlosschleife vermeiden
   const [hasScaled, setHasScaled] = useState(false);
 
   const reset = () => {
@@ -59,17 +61,9 @@ export default function ImageUpload() {
   const handleSubmit = async () => {
     if (!file) return;
     setLoading(true);
-
-    // **1. Bild komprimieren**
-    const compressedFile = await imageCompression(file, {
-      maxSizeMB: 1, // Zielgröße max. 1 MB
-      maxWidthOrHeight: 1920, // max. Auflösung
-      useWebWorker: true,
-    });
-
-    // **2. Klassifikation anstoßen**
+    // bereits reset() aufgerufen
     const form = new FormData();
-    form.append("image", compressedFile, compressedFile.name);
+    form.append("image", file, file.name);
 
     try {
       const res = await fetch("/api/classify", { method: "POST", body: form });
@@ -82,6 +76,7 @@ export default function ImageUpload() {
             : window.location.origin + r.image_url
         );
         setAnalysis(r);
+        // Scaling erfolgt später in onLoad
       } else {
         console.error("Analysis error:", json.error);
       }
@@ -92,7 +87,7 @@ export default function ImageUpload() {
     }
   };
 
-  // **3. Sobald das Bild geladen ist, einmalig alle Boxen skalieren**
+  // Sobald das Bild im DOM geladen ist, skaliere alle Boxes einmalig
   const onImageLoad: ReactEventHandler<HTMLImageElement> = useCallback(
     (e) => {
       if (!analysis || hasScaled) return;
@@ -179,11 +174,7 @@ export default function ImageUpload() {
               fill
               unoptimized
               className="object-cover"
-              onLoadingComplete={(img) =>
-                onImageLoad({
-                  currentTarget: img,
-                } as React.SyntheticEvent<HTMLImageElement>)
-              }
+              onLoad={onImageLoad}
             />
 
             {scaledBoxes.map((box, idx) => (
