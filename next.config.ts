@@ -4,13 +4,12 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   api: {
     bodyParser: {
-      // by default it's around 1mb; bump it to whatever you need
       sizeLimit: "20mb",
     },
   },
   images: {
     // you can still use domains if you're only loading whole-host images
-    domains: ["localhost", "plant.id.let-net.cc"],
+    domains: ["localhost", "plant.id.let-net.cc", "let-net.cc"],
 
     // remotePatterns gives you fine-grained path+protocol control
     remotePatterns: [
@@ -45,7 +44,6 @@ const nextConfig: NextConfig = {
         pathname: "/images/**",
       },
 
-      // allow any path on your future prod domain
       {
         protocol: "https",
         hostname: "plant.id.let-net.cc",
