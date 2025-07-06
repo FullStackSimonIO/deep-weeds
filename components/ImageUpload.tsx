@@ -13,13 +13,14 @@ import Image from "next/image";
 import { boxToCoords, Coords, scaleCoords } from "@/app/utils/coordinates";
 import Folder from "./Folder";
 
+interface Detection {
+  label: string;
+  confidence: number;
+  box: [number, number, number, number];
+}
 interface AnalyzeResponse {
   filename: string;
-  detections: {
-    label: string;
-    confidence: number;
-    box: [number, number, number, number];
-  }[];
+  detections: Detection[];
   image_url: string;
 }
 interface ClassifyWrapper {
@@ -32,18 +33,15 @@ export default function ImageUpload() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
-  const [rawCoords, setRawCoords] = useState<Coords | null>(null);
-  const [scaled, setScaled] = useState<Coords | null>(null);
+  const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
+  const [scaledBoxes, setScaledBoxes] = useState<
+    Array<Coords & { confidence: number }>
+  >([]);
 
-  // **NEW** store the confidence of the first detection
-  const [confidence, setConfidence] = useState<number | null>(null);
-
-  // once we have a new file or resultImage, clear everything
   const reset = () => {
-    setScaled(null);
-    setRawCoords(null);
     setResultImage(null);
-    setConfidence(null); // reset confidence too
+    setAnalysis(null);
+    setScaledBoxes([]);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -56,6 +54,7 @@ export default function ImageUpload() {
     if (!file) return;
     setLoading(true);
     reset();
+
     const form = new FormData();
     form.append("image", file, file.name);
 
@@ -63,17 +62,14 @@ export default function ImageUpload() {
       const res = await fetch("/api/classify", { method: "POST", body: form });
       const json = (await res.json()) as ClassifyWrapper;
       if (json.success && json.result) {
+        const r = json.result;
         setResultImage(
-          json.result.image_url.startsWith("http")
-            ? json.result.image_url
-            : window.location.origin + json.result.image_url
+          r.image_url.startsWith("http")
+            ? r.image_url
+            : window.location.origin + r.image_url
         );
-
-        if (json.result.detections.length) {
-          const det = json.result.detections[0];
-          setRawCoords(boxToCoords(det.box));
-          setConfidence(det.confidence); // <- capture confidence
-        }
+        setAnalysis(r);
+        // scaledBoxes setzen wir nach Image-Load
       } else {
         console.error("Analysis error:", json.error);
       }
@@ -84,29 +80,37 @@ export default function ImageUpload() {
     }
   };
 
-  // When <Image> finishes loading, we know its actual size in the DOM.
-  // We only compute once, and only if rawCoords exist.
+  // Wenn das Bild im DOM fertig gerendert ist, skalieren wir alle Boxes
   const onImageLoad: ReactEventHandler<HTMLImageElement> = useCallback(
     (e) => {
-      if (!rawCoords) return;
+      if (!analysis) return;
       const img = e.currentTarget;
       const naturalW = img.naturalWidth;
       const naturalH = img.naturalHeight;
       const displayW = img.width;
       const displayH = img.height;
 
-      const s = scaleCoords(rawCoords, naturalW, naturalH, displayW, displayH);
-      // only set if finite
-      if (
-        Number.isFinite(s.x) &&
-        Number.isFinite(s.y) &&
-        Number.isFinite(s.width) &&
-        Number.isFinite(s.height)
-      ) {
-        setScaled(s);
-      }
+      const newScaled = analysis.detections.map((det) => {
+        const raw = boxToCoords(det.box);
+        const s = scaleCoords(raw, naturalW, naturalH, displayW, displayH);
+        return {
+          ...s,
+          confidence: det.confidence,
+        };
+      });
+
+      // Filter ungültige Werte raus
+      const finiteBoxes = newScaled.filter(
+        (b) =>
+          Number.isFinite(b.x) &&
+          Number.isFinite(b.y) &&
+          Number.isFinite(b.width) &&
+          Number.isFinite(b.height)
+      );
+
+      setScaledBoxes(finiteBoxes);
     },
-    [rawCoords]
+    [analysis]
   );
 
   return (
@@ -156,7 +160,7 @@ export default function ImageUpload() {
           </Button>
         </div>
 
-        {/* — Preview & Overlay — */}
+        {/* — Preview & Overlays — */}
         {(file || resultImage) && (
           <div className="relative w-full aspect-[4/3] mx-auto rounded-lg border border-gray-700 overflow-hidden">
             <Image
@@ -171,27 +175,26 @@ export default function ImageUpload() {
               }
             />
 
-            {/* only render if we have finite scaled coords */}
-            {scaled && confidence !== null && (
-              <Tooltip>
+            {scaledBoxes.map((box, idx) => (
+              <Tooltip key={idx}>
                 <TooltipTrigger asChild>
                   <div
                     style={{
                       position: "absolute",
-                      top: scaled.y,
-                      left: scaled.x,
-                      width: scaled.width,
-                      height: scaled.height,
+                      top: box.y,
+                      left: box.x,
+                      width: box.width,
+                      height: box.height,
                       border: "3px solid #EF4444",
                       boxSizing: "border-box",
                     }}
                   />
                 </TooltipTrigger>
                 <TooltipContent side="top" align="center">
-                  Confidence: {(confidence * 100).toFixed(1)}%
+                  Confidence: {(box.confidence * 100).toFixed(1)}%
                 </TooltipContent>
               </Tooltip>
-            )}
+            ))}
           </div>
         )}
       </CardContent>

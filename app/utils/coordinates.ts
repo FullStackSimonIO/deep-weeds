@@ -1,5 +1,3 @@
-// src/utils/coordinates.ts
-
 export type Box = [number, number, number, number];
 export interface Coords {
   x: number;
@@ -8,9 +6,6 @@ export interface Coords {
   height: number;
 }
 
-/**
- * Wandelt ein FastAPI-[x1, y1, x2, y2] in unser Coords‐Format um.
- */
 export function boxToCoords(box: Box): Coords {
   const [x1, y1, x2, y2] = box;
   return {
@@ -21,9 +16,6 @@ export function boxToCoords(box: Box): Coords {
   };
 }
 
-/**
- * Skaliert Koordinaten von Natural- auf CSS-/Container‐Größe.
- */
 export function scaleCoords(
   coords: Coords,
   naturalWidth: number,

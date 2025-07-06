@@ -5,8 +5,6 @@ const ANALYZE_URL =
 
 export async function POST(req: Request) {
   try {
-    console.log("=== /api/classify POST gestartet ===");
-
     const formData = await req.formData();
     const fileField = formData.get("image");
     if (!(fileField instanceof File)) {
